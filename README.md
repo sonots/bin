@@ -1,4 +1,0 @@
-bin
-===
-
-my misc scripts
