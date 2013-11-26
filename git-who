@@ -1,0 +1,24 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use feature qw/say/;
+
+my @remotes = `git branch -a -v`;
+my @result;
+
+for my $remote (@remotes) {
+    chomp $remote;
+    if ( $remote =~ /(remotes\/origin\/(?:[\w\-_]+\/?)+)/ ) {
+        my @log = `git log $1 -n 1`;
+
+        for my $line (@log) {
+            if ( $line =~ /Author: (\w+) / ) {
+                push @result, $remote . " ---> " . $1;
+            }
+        }
+    }
+}
+
+print "$_\n" for @result;
