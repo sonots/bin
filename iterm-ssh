@@ -1,0 +1,30 @@
+#!/bin/zsh
+# iterm-ssh: Open ssh console in new tab of iterm
+# HOW TO
+# $ iterm-ssh host1 host2 host3
+# cf. http://blog.ikuya.net/2013/06/18/create-iterm-tab-on-ssh/
+
+TERM_SESSION_NAME=Default
+ 
+if [ $TERM_PROGRAM = "iTerm.app" ]; then
+    function new_tab() {
+        osascript\
+            -e "tell application \"iTerm\""\
+                -e "tell the first terminal"\
+                    -e "launch session \"${ITERM_SESSION_NAME}\""\
+                    -e "tell the current session"\
+                        -e "write text \"$1\""\
+                        -e "set name to \"$2\""\
+                    -e "end tell"\
+                -e "end tell"\
+            -e "end tell"\
+            2> /dev/null
+    }
+fi
+
+for host in $@; do
+  new_tab "clear; ssh $host; exit" "$host"
+done
+
+# new_tab "clear; ssh $@; exit" "$@"
+
