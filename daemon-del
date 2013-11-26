@@ -1,0 +1,17 @@
+#!/bin/bash
+#
+# /service/XXX を安全に削除する
+#
+
+[ -z "$1" ] && return
+daemon=${1##*/}
+if [ -s /service/${daemon} ]; then
+  mv /service/${daemon} /service/.${daemon}
+  /command/svc -dx /service/.${daemon}
+  if [ -d /service/.${daemon}/log ]; then
+    /command/svc -dx /service/.${daemon}/log
+  fi
+  rm -f /service/.${daemon}
+else
+  echo "not found: /service/${daemon}"
+fi

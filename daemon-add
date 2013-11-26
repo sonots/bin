@@ -1,0 +1,16 @@
+#!/bin/bash
+#
+# /service/XXX に追加する
+#
+
+[ -z "$1" ] && return
+DAEMONDIR=$1
+
+[ -d $DAEMONDIR ] || { echo "no such dir: $DAEMONDIR"; return; }
+
+d=${DAEMONDIR##*/}
+if [ ! -s "/service/$d" ]; then
+  ln -snf ${DAEMONDIR} /service/
+fi
+/command/svc -u /service/$d >/dev/null 2>&1
+
