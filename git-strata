@@ -1,0 +1,158 @@
+#!/bin/env ruby
+# -*- coding: utf-8 -*-
+# Copyright (c) 2013 Urabe, Shyouhei
+#
+# Permission is hereby granted, free of  charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without  restriction, including without limitation the rights
+# to  use, copy, modify,  merge, publish,  distribute, sublicense,  and/or sell
+# copies  of the  Software,  and to  permit  persons to  whom  the Software  is
+# furnished to do so, subject to the following conditions:
+#
+#    The above copyright notice and this permission notice shall be included
+#    in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE  IS PROVIDED "AS IS",  WITHOUT WARRANTY OF ANY  KIND, EXPRESS OR
+# IMPLIED,  INCLUDING BUT  NOT LIMITED  TO THE  WARRANTIES  OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE  AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+# AUTHORS  OR COPYRIGHT  HOLDERS  BE LIABLE  FOR  ANY CLAIM,  DAMAGES OR  OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+ 
+def failed
+  abort "cd WORKING_DIRECTORY && ruby #$0 PATH"
+end
+ 
+def parse_diff enum
+  return Enumerator.new do |e|
+    hunks = enum.slice_before %r/^@@/
+    hunks.each do |t|
+      next unless /^@@/.match t.first # cut header
+      x = y = z = w = 0
+      a = Array.new
+      f = false
+      t.each do |i|
+        case i
+        when /^@@ \-(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/ then
+          x = $1.to_i
+          y = ($2 || 1).to_i
+          z = $3.to_i
+          w = ($4 || 1).to_i
+        when /^\+/ then
+          a << $'
+        end
+      end
+      unless w == a.size
+        puts t
+        raise [$path, [x, y, z, w], a.size].inspect
+      end
+      e.yield [x, y, z, a] if z != 0
+    end
+  end
+end
+ 
+def patch prev, title, hunks
+  i = j = 1
+  this  = hunks.each_with_object Array.new do |(x, y, z, w), r|
+    n  = w.empty? ? z + 1 : z
+    while i < n do
+      r[i] = prev[j]
+      i   += 1
+      j   += 1
+    end
+    w.each do |l|
+      r[i] = [[title, l], *prev[j]]
+      i   += 1
+    end
+    j = y.zero? ? x + y + 1 : x + y
+  end
+  k = prev.size
+  while j < k do
+    this[i] = prev[j]
+    i += 1
+    j += 1
+  end
+  return this.freeze
+end
+ 
+$metas = Hash.new
+ 
+def dump fp, buf
+  strata = buf.map {|i| i.map {|j| j.first[0,7] } rescue [] }.
+    map {|i| i.reverse.join ' -> ' }
+  maxhis = strata.max_by {|i| i.length }.length
+  maxnam = buf.map {|i|
+    begin
+      /^Author: +(.+)( \<.+\>)$/.match($metas[i.first.first].join)[1]
+    rescue
+      ''
+    end
+  }.max_by {|i| i.length }.length rescue 1
+  buf.each_with_index do |i, j|
+    next unless i
+    title, line = *i.first
+    meta   = $metas[title].join
+    author = /^Author: +(.+)( \<.+\>)$/.match(meta)[1]
+    date   = /^Date: +(.+)$/.match(meta)[1]
+    fp.printf "%-#{maxhis}s (%-#{maxnam}s %s) %s", \
+      strata[j], author, date, line
+  end
+end
+ 
+# ARGV handling
+failed unless path = $path = ARGV.shift
+ 
+# Check git
+failed unless system "git", "log", path, out: IO::NULL, err: IO::NULL
+ 
+# Get diffs
+cmd = %W"git log --follow --no-color --no-min-parents --unified=0 --date=iso #{path}"
+ 
+IO.popen cmd, 'rb' do |fp|
+  buf = fp.each_line
+  buf = buf.slice_before %r/^commit ([0-9a-f]+)/
+  buf = buf.map do |commit|
+    # path #1
+    match = /^commit ([0-9a-f]+)$/.match commit.first # should match
+    obj   = match[1]
+    meta  = commit.slice_before %r/\A\n\z/
+    meta  = meta.to_a # to_a is needed to pop from here
+    diff  = meta.pop
+    diff  = meta.pop until diff != ["\n"]
+    meta.flatten!
+    $metas.store obj, meta
+    next obj, meta, parse_diff(diff)
+  end
+  buf = buf.to_a
+  buf = buf.reverse
+  buf = buf.inject [[]] do |r, (o, m, e)|
+    # path #2
+    this = patch r.last, o, e
+    r << this
+  end
+ 
+  # buf here is equivalent to the list of git-blame output
+ 
+  # path #3
+  buf = buf.last
+  if STDOUT.isatty
+    pager = ENV['PAGER'] || 'less'
+    IO.popen pager, 'wb' do |fp|
+      dump fp, buf
+    end
+  else
+    dump STDOUT, buf
+  end
+end
+ 
+# 
+# Local Variables:
+# mode: ruby
+# coding: utf-8-unix
+# indent-tabs-mode: t
+# tab-width: 3
+# ruby-indent-level: 3
+# fill-column: 79
+# default-justification: full
+# End:
